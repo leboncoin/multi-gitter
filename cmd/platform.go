@@ -399,12 +399,14 @@ func createGerritClient(flag *flag.FlagSet, verifyFlags bool) (multigitter.Versi
 	username, _ := flag.GetString("username")
 	gerritBaseURL, _ := flag.GetString("base-url")
 
+	repoSearch, _ := flag.GetString("repo-search")
+
 	token, err := getToken(flag)
 	if err != nil {
 		return nil, err
 	}
 
-	vc, err := gerrit.New(username, token, gerritBaseURL)
+	vc, err := gerrit.New(username, token, gerritBaseURL, repoSearch)
 	return vc, err
 }
 
