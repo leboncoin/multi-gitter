@@ -10,6 +10,7 @@ import (
 	"github.com/lindell/multi-gitter/internal/multigitter"
 	"github.com/lindell/multi-gitter/internal/scm/bitbucketcloud"
 	"github.com/lindell/multi-gitter/internal/scm/bitbucketserver"
+	"github.com/lindell/multi-gitter/internal/scm/gerrit"
 	"github.com/lindell/multi-gitter/internal/scm/gitea"
 	"github.com/lindell/multi-gitter/internal/scm/github"
 	"github.com/lindell/multi-gitter/internal/scm/gitlab"
@@ -123,6 +124,8 @@ func getVersionController(flag *flag.FlagSet, verifyFlags bool, readOnly bool) (
 		return createBitbucketServerClient(flag, verifyFlags)
 	case "bitbucket_cloud":
 		return createBitbucketCloudClient(flag, verifyFlags)
+	case "gerrit":
+		return createGerritClient(flag, verifyFlags)
 	default:
 		return nil, fmt.Errorf("unknown platform: %s", platform)
 	}
@@ -390,6 +393,19 @@ func createBitbucketServerClient(flag *flag.FlagSet, verifyFlags bool) (multigit
 	}
 
 	return vc, nil
+}
+
+func createGerritClient(flag *flag.FlagSet, verifyFlags bool) (multigitter.VersionController, error) {
+	username, _ := flag.GetString("username")
+	gerritBaseURL, _ := flag.GetString("base-url")
+
+	token, err := getToken(flag)
+	if err != nil {
+		return nil, err
+	}
+
+	vc, err := gerrit.New(username, token, gerritBaseURL)
+	return vc, err
 }
 
 // versionControllerCompletion is a helper function to allow for easier implementation of Cobra autocompletions that depend on a version controller
