@@ -48,7 +48,7 @@ func New(username, token, baseURL, repoSearch string) (*Gerrit, error) {
 func (g Gerrit) GetRepositories(ctx context.Context) ([]scm.Repository, error) {
 	opt := &gogerrit.ProjectOptions{
 		Description: true,
-		Substring:   g.repoSearch,
+		Regex:       g.repoSearch,
 		Type:        "CODE",
 		ProjectBaseOptions: gogerrit.ProjectBaseOptions{
 			Limit: 2500, // Maybe we should make this configurable
