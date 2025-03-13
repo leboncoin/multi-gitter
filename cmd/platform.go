@@ -397,7 +397,14 @@ func createBitbucketServerClient(flag *flag.FlagSet, verifyFlags bool) (multigit
 
 func createGerritClient(flag *flag.FlagSet, verifyFlags bool) (multigitter.VersionController, error) {
 	username, _ := flag.GetString("username")
+	if username == "" {
+		return nil, errors.New("no username set")
+	}
+
 	gerritBaseURL, _ := flag.GetString("base-url")
+	if gerritBaseURL == "" {
+		return nil, errors.New("no base-url set")
+	}
 
 	repoSearch, _ := flag.GetString("repo-search")
 

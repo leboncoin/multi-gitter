@@ -2,12 +2,22 @@ package gerrit
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
+	"net/url"
+	"os"
+	"os/user"
+	"strings"
+	"time"
+
 	gogerrit "github.com/andygrunwald/go-gerrit"
 	"github.com/lindell/multi-gitter/internal/scm"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"net/url"
 )
+
+const FooterBranch = "MultiGitter-Branch"
+const FooterChangeId = "Change-Id"
 
 type Gerrit struct {
 	client     *gogerrit.Client
@@ -84,37 +94,153 @@ func (g Gerrit) convertRepo(name string) (repository, error) {
 	}, nil
 }
 
-func (Gerrit) CreatePullRequest(ctx context.Context, repo scm.Repository, prRepo scm.Repository, newPR scm.NewPullRequest) (scm.PullRequest, error) {
-	log.Infof("CreatePullRequest %v, %v, %v", ctx, repo, prRepo, newPR)
-	return nil, errors.New("implement me")
+func (g Gerrit) CreatePullRequest(ctx context.Context, repo scm.Repository, prRepo scm.Repository, newPR scm.NewPullRequest) (scm.PullRequest, error) {
+	// In Gerrit context, pushing a commit to refs/for/<base_branch> is enough to create automatically a change.
+	// So here, we are just "fetching" the change related to current branch (Head of PR)
+
+	return g.getChange(ctx, repo, newPR.Head)
+	// TODO set reviewers, team reviewers, assignees, draft, labels
 }
 
-func (Gerrit) UpdatePullRequest(ctx context.Context, repo scm.Repository, pullReq scm.PullRequest, updatedPR scm.NewPullRequest) (scm.PullRequest, error) {
-	log.Infof("UpdatePullRequest %v, %v, %v", ctx, repo, pullReq, updatedPR)
-	return nil, errors.New("implement me")
+func (g Gerrit) UpdatePullRequest(ctx context.Context, repo scm.Repository, pullReq scm.PullRequest, updatedPR scm.NewPullRequest) (scm.PullRequest, error) {
+	// In Gerrit context, pushing a commit to refs/for/<base_branch> is enough to create automatically a change.
+	// So here, we are just "fetching" the change related
+
+	return g.getChange(ctx, repo, updatedPR.Head)
+	// TODO update reviewers, team reviewers, assignees, draft, labels
 }
 
-func (Gerrit) GetPullRequests(ctx context.Context, branchName string) ([]scm.PullRequest, error) {
-	log.Infof("GetPullRequests %v, %s", ctx, branchName)
-	return nil, errors.New("implement me")
+func (g Gerrit) GetPullRequests(ctx context.Context, branchName string) ([]scm.PullRequest, error) {
+	repositories, err := g.GetRepositories(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var prs []scm.PullRequest
+	for _, repo := range repositories {
+		changes, err := g.queryChanges(ctx, repo, branchName, []string{})
+		if err != nil {
+			return nil, err
+		}
+		for _, change := range *changes {
+			prs = append(prs, convertChange(change, g.baseUrl))
+		}
+	}
+
+	return prs, err
 }
 
-func (Gerrit) GetOpenPullRequest(ctx context.Context, repo scm.Repository, branchName string) (scm.PullRequest, error) {
-	log.Infof("GetOpenPullRequest %v, %v, %s", ctx, repo, branchName)
-	return nil, errors.New("implement me")
+func (g Gerrit) GetOpenPullRequest(ctx context.Context, repo scm.Repository, branchName string) (scm.PullRequest, error) {
+	changes, err := g.queryChanges(ctx, repo, branchName, []string{
+		"is:open",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(*changes) == 0 {
+		return nil, nil
+	} else if len(*changes) > 1 {
+		return nil, errors.New("More than one open change for branch " + branchName + " in project " + repo.FullName())
+	}
+
+	return convertChange((*changes)[0], g.baseUrl), nil
 }
 
-func (Gerrit) MergePullRequest(ctx context.Context, pr scm.PullRequest) error {
-	log.Infof("MergePullRequest %v, %v", ctx, pr)
-	return errors.New("implement me")
+func (g Gerrit) MergePullRequest(ctx context.Context, pr scm.PullRequest) error {
+	change := pr.(change)
+
+	_, _, err := g.client.Changes.SubmitChange(ctx, change.id, &gogerrit.SubmitInput{})
+
+	return err
 }
 
-func (Gerrit) ClosePullRequest(ctx context.Context, pr scm.PullRequest) error {
-	log.Infof("ClosePullRequest %v, %v", ctx, pr)
-	return errors.New("implement me")
+func (g Gerrit) ClosePullRequest(ctx context.Context, pr scm.PullRequest) error {
+	change := pr.(change)
+
+	_, _, err := g.client.Changes.AbandonChange(ctx, change.id, &gogerrit.AbandonInput{})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (Gerrit) ForkRepository(ctx context.Context, repo scm.Repository, newOwner string) (scm.Repository, error) {
-	log.Infof("ForkRepository %v, %v, %s", ctx, repo, newOwner)
-	return nil, errors.New("implement me")
+	return nil, errors.New("Forking repositories is not supported in Gerrit")
+}
+
+func (g Gerrit) getChange(ctx context.Context, repo scm.Repository, branchName string) (scm.PullRequest, error) {
+	pr, err := g.GetOpenPullRequest(ctx, repo, branchName)
+	if err != nil {
+		return nil, err
+	} else if pr == nil {
+		return nil, errors.Errorf("Unable to find any open change related to branch %s in project %s", branchName, repo.FullName())
+	}
+	return pr, nil
+}
+
+func (g Gerrit) queryChanges(ctx context.Context, repo scm.Repository, branchName string, filters []string) (*[]gogerrit.ChangeInfo, error) {
+	defaultFilters := []string{
+		"project:" + repo.FullName(),
+		"footer:" + FooterBranch + "=" + branchName,
+	}
+	query := strings.Join(append(defaultFilters, filters...), "+")
+
+	opt := &gogerrit.QueryChangeOptions{
+		QueryOptions: gogerrit.QueryOptions{
+			Query: []string{query},
+		},
+		ChangeOptions: gogerrit.ChangeOptions{
+			AdditionalFields: []string{
+				"SUBMITTABLE",
+			},
+		},
+	}
+	changes, _, err := g.client.Changes.QueryChanges(ctx, opt)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to query changes: '%s'", filters)
+	}
+	return changes, nil
+}
+
+func (g Gerrit) EnhanceCommit(ctx context.Context, repo scm.Repository, branchName string, commitMessage string) (string, error) {
+	pr, err := g.GetOpenPullRequest(ctx, repo, branchName)
+	if err != nil {
+		return commitMessage, err
+	}
+
+	changeId := ""
+	if pr != nil {
+		changeId = pr.(change).changeId
+	} else {
+		changeId = generateChangeId(commitMessage)
+	}
+	message := commitMessage
+	message = message + "\n\n" + FooterBranch + ": " + branchName
+	message = message + "\n" + FooterChangeId + ": " + changeId
+	return message, nil
+}
+
+func (g Gerrit) FeatureBranchExist(ctx context.Context, repo scm.Repository, branchName string) (bool, error) {
+	pr, err := g.GetOpenPullRequest(ctx, repo, branchName)
+	return pr != nil, err
+}
+
+func (g Gerrit) RemoteReference(baseBranch string, featureBranch string, skipPullRequest bool, pushOnly bool) string {
+	if !skipPullRequest && !pushOnly {
+		return "refs/for/" + baseBranch
+	}
+	return "refs/heads/" + featureBranch
+}
+
+func generateChangeId(commitMessage string) string {
+	h := sha1.New()
+	hostname, _ := os.Hostname()
+	whoami, _ := user.Current()
+	h.Write([]byte(hostname))
+	h.Write([]byte(whoami.Username))
+	h.Write([]byte(time.Now().String()))
+	h.Write([]byte(commitMessage))
+
+	return "I" + hex.EncodeToString(h.Sum(nil))
 }
