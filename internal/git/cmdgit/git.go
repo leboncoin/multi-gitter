@@ -145,7 +145,11 @@ func (g *Git) Push(ctx context.Context, remoteName, remoteReference string, forc
 	if force {
 		args = append(args, "--force")
 	}
-	args = append(args, "HEAD:"+remoteReference)
+	refSpec := "HEAD"
+	if remoteReference != "" {
+		refSpec = refSpec + ":" + remoteReference
+	}
+	args = append(args, refSpec)
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 	_, err := g.run(cmd)

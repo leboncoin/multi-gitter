@@ -408,7 +408,7 @@ func (r *Runner) remoteReference(baseBranch string, featureBranch string) string
 	if ok {
 		return vcs.RemoteReference(baseBranch, featureBranch, r.SkipPullRequest, r.PushOnly)
 	}
-	return "refs/heads/" + featureBranch
+	return ""
 }
 
 func (r *Runner) ensurePullRequestExists(ctx context.Context, log log.FieldLogger, repo scm.Repository, prRepo scm.Repository, baseBranch string, featureBranchExist bool) (scm.PullRequest, error) {
