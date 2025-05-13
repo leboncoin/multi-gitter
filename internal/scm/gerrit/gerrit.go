@@ -20,7 +20,7 @@ const FooterBranch = "MultiGitter-Branch"
 const FooterChangeId = "Change-Id"
 
 type Gerrit struct {
-	client     *gogerrit.Client
+	client     GoGerritClient
 	baseUrl    string
 	username   string
 	token      string
@@ -37,7 +37,9 @@ func New(username, token, baseURL, repoSearch string) (*Gerrit, error) {
 	client.Authentication.SetBasicAuth(username, token)
 
 	return &Gerrit{
-		client:     client,
+		client: goGerritClient{
+			client: client,
+		},
 		baseUrl:    baseURL,
 		username:   username,
 		token:      token,
@@ -54,7 +56,7 @@ func (g Gerrit) GetRepositories(ctx context.Context) ([]scm.Repository, error) {
 			Limit: 2500, // Maybe we should make this configurable
 		},
 	}
-	projects, _, err := g.client.Projects.ListProjects(ctx, opt)
+	projects, _, err := g.client.ListProjects(ctx, opt)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list projects")
 	}
@@ -150,7 +152,7 @@ func (g Gerrit) GetOpenPullRequest(ctx context.Context, repo scm.Repository, bra
 func (g Gerrit) MergePullRequest(ctx context.Context, pr scm.PullRequest) error {
 	change := pr.(change)
 
-	_, _, err := g.client.Changes.SubmitChange(ctx, change.id, &gogerrit.SubmitInput{})
+	_, _, err := g.client.SubmitChange(ctx, change.id, &gogerrit.SubmitInput{})
 
 	return err
 }
@@ -158,7 +160,7 @@ func (g Gerrit) MergePullRequest(ctx context.Context, pr scm.PullRequest) error 
 func (g Gerrit) ClosePullRequest(ctx context.Context, pr scm.PullRequest) error {
 	change := pr.(change)
 
-	_, _, err := g.client.Changes.AbandonChange(ctx, change.id, &gogerrit.AbandonInput{})
+	_, _, err := g.client.AbandonChange(ctx, change.id, &gogerrit.AbandonInput{})
 	if err != nil {
 		return err
 	}
@@ -196,7 +198,7 @@ func (g Gerrit) queryChanges(ctx context.Context, repo scm.Repository, branchNam
 			},
 		},
 	}
-	changes, _, err := g.client.Changes.QueryChanges(ctx, opt)
+	changes, _, err := g.client.QueryChanges(ctx, opt)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to query changes: '%s'", filters)
 	}
