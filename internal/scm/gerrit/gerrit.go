@@ -102,17 +102,17 @@ func (g Gerrit) convertRepo(name string) (repository, error) {
 func (g Gerrit) CreatePullRequest(ctx context.Context, repo scm.Repository, prRepo scm.Repository, newPR scm.NewPullRequest) (scm.PullRequest, error) {
 	// In Gerrit context, pushing a commit to refs/for/<base_branch> is enough to create automatically a change.
 	// So here, we are just "fetching" the change related to current branch (Head of PR)
+	// Not yet implemented: reviewers, team reviewers, assignees, draft, labels
 
 	return g.getChange(ctx, repo, newPR.Head)
-	// TODO set reviewers, team reviewers, assignees, draft, labels
 }
 
 func (g Gerrit) UpdatePullRequest(ctx context.Context, repo scm.Repository, pullReq scm.PullRequest, updatedPR scm.NewPullRequest) (scm.PullRequest, error) {
 	// In Gerrit context, pushing a commit to refs/for/<base_branch> is enough to create automatically a change.
 	// So here, we are just "fetching" the change related
+	// Not yet implemented: reviewers, team reviewers, assignees, draft, labels
 
 	return g.getChange(ctx, repo, updatedPR.Head)
-	// TODO update reviewers, team reviewers, assignees, draft, labels
 }
 
 func (g Gerrit) GetPullRequests(ctx context.Context, branchName string) ([]scm.PullRequest, error) {
