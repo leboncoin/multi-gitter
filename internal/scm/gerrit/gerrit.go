@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"maps"
 	"net/url"
 	"os"
 	"os/user"
+	"slices"
 	"strings"
 	"time"
 
@@ -62,7 +64,8 @@ func (g Gerrit) GetRepositories(ctx context.Context) ([]scm.Repository, error) {
 	}
 
 	repos := make([]scm.Repository, 0)
-	for name, project := range *projects {
+	for _, name := range slices.Sorted(maps.Keys(*projects)) {
+		project := (*projects)[name]
 		if project.State != "ACTIVE" {
 			log.Debug("Skipping repository since state is not ACTIVE")
 			continue
