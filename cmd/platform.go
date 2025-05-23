@@ -406,7 +406,7 @@ func createGerritClient(flag *flag.FlagSet, verifyFlags bool) (multigitter.Versi
 		return nil, errors.New("no base-url set")
 	}
 
-	repoRefs, _ := flag.GetStringArray("repo")
+	repoRefs, _ := flag.GetStringSlice("repo")
 	repoSearch, _ := flag.GetString("repo-search")
 
 	if verifyFlags && len(repoRefs) == 0 && repoSearch != "" {
