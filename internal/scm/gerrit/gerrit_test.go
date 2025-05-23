@@ -1,15 +1,16 @@
 package gerrit
 
 import (
+	"regexp"
+	"strconv"
+	"strings"
+	"testing"
+
 	gogerrit "github.com/andygrunwald/go-gerrit"
 	"github.com/lindell/multi-gitter/internal/scm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
-	"regexp"
-	"strconv"
-	"strings"
-	"testing"
 )
 
 type goGerritClientMock struct {
@@ -74,17 +75,19 @@ func getChangesForQuery(query string) (*[]gogerrit.ChangeInfo, *gogerrit.Respons
 
 func TestGetRepositories(t *testing.T) {
 	g := &Gerrit{
-		client: goGerritClientMock{
+		Client: goGerritClientMock{
 			ListProjectsFunc: func(_ context.Context, opt *gogerrit.ProjectOptions) (*map[string]gogerrit.ProjectInfo, *gogerrit.Response, error) {
 				// Ensure we inject repoSearch parameter correctly
 				require.Equal(t, "repo", opt.Regex)
 				return projects, nil, nil
 			},
 		},
-		baseUrl:    "https://gerrit.com",
-		username:   "admin",
-		token:      "token123",
-		repoSearch: "repo",
+		BaseURL:  "https://gerrit.com",
+		Username: "admin",
+		Token:    "token123",
+		RepoListing: RepositoryListing{
+			RepoSearch: "repo",
+		},
 	}
 
 	repos, err := g.GetRepositories(context.Background())
@@ -109,7 +112,7 @@ func TestGetRepositories(t *testing.T) {
 
 func TestGetPullRequests(t *testing.T) {
 	g := &Gerrit{
-		client: goGerritClientMock{
+		Client: goGerritClientMock{
 			ListProjectsFunc: func(_ context.Context, opt *gogerrit.ProjectOptions) (*map[string]gogerrit.ProjectInfo, *gogerrit.Response, error) {
 				require.Equal(t, "repo", opt.Regex)
 				return projects, nil, nil
@@ -118,10 +121,12 @@ func TestGetPullRequests(t *testing.T) {
 				return getChangesForQuery(opt.QueryOptions.Query[0])
 			},
 		},
-		baseUrl:    "https://gerrit.com",
-		username:   "admin",
-		token:      "token123",
-		repoSearch: "repo",
+		BaseURL:  "https://gerrit.com",
+		Username: "admin",
+		Token:    "token123",
+		RepoListing: RepositoryListing{
+			RepoSearch: "repo",
+		},
 	}
 	prs, err := g.GetPullRequests(context.Background(), "feature")
 	require.NoError(t, err)
@@ -151,7 +156,7 @@ func TestGetPullRequests(t *testing.T) {
 
 func TestGetOpenPullRequest(t *testing.T) {
 	g := &Gerrit{
-		client: goGerritClientMock{
+		Client: goGerritClientMock{
 			QueryChangesFunc: func(_ context.Context, opt *gogerrit.QueryChangeOptions) (*[]gogerrit.ChangeInfo, *gogerrit.Response, error) {
 				return getChangesForQuery(opt.QueryOptions.Query[0])
 			},
@@ -189,7 +194,7 @@ func TestGetOpenPullRequest(t *testing.T) {
 
 func TestCreatePullRequest(t *testing.T) {
 	g := &Gerrit{
-		client: goGerritClientMock{
+		Client: goGerritClientMock{
 			QueryChangesFunc: func(_ context.Context, opt *gogerrit.QueryChangeOptions) (*[]gogerrit.ChangeInfo, *gogerrit.Response, error) {
 				return getChangesForQuery(opt.QueryOptions.Query[0])
 			},
@@ -207,7 +212,7 @@ func TestCreatePullRequest(t *testing.T) {
 
 func TestUpdatePullRequest(t *testing.T) {
 	g := &Gerrit{
-		client: goGerritClientMock{
+		Client: goGerritClientMock{
 			QueryChangesFunc: func(_ context.Context, opt *gogerrit.QueryChangeOptions) (*[]gogerrit.ChangeInfo, *gogerrit.Response, error) {
 				return getChangesForQuery(opt.QueryOptions.Query[0])
 			},
@@ -249,7 +254,7 @@ func TestRemoteReference(t *testing.T) {
 
 func TestFeatureBranchExist(t *testing.T) {
 	g := &Gerrit{
-		client: goGerritClientMock{
+		Client: goGerritClientMock{
 			QueryChangesFunc: func(_ context.Context, opt *gogerrit.QueryChangeOptions) (*[]gogerrit.ChangeInfo, *gogerrit.Response, error) {
 				return getChangesForQuery(opt.QueryOptions.Query[0])
 			},
@@ -276,7 +281,7 @@ func TestFeatureBranchExist(t *testing.T) {
 
 func TestEnhanceCommit(t *testing.T) {
 	g := &Gerrit{
-		client: goGerritClientMock{
+		Client: goGerritClientMock{
 			QueryChangesFunc: func(_ context.Context, opt *gogerrit.QueryChangeOptions) (*[]gogerrit.ChangeInfo, *gogerrit.Response, error) {
 				return getChangesForQuery(opt.QueryOptions.Query[0])
 			},
@@ -311,7 +316,7 @@ func TestEnhanceCommit(t *testing.T) {
 
 func TestMergePullRequest(t *testing.T) {
 	g := &Gerrit{
-		client: goGerritClientMock{
+		Client: goGerritClientMock{
 			SubmitChangeFunc: func(_ context.Context, changeID string, input *gogerrit.SubmitInput) (*gogerrit.ChangeInfo, *gogerrit.Response, error) {
 				// Ensure correct id is used when a change is submitted
 				require.Equal(t, "repo-active~master~Icc717a31a47beb9b5d9aeb8a1d374883afe89030", changeID)
@@ -331,7 +336,7 @@ func TestMergePullRequest(t *testing.T) {
 
 func TestClosePullRequest(t *testing.T) {
 	g := &Gerrit{
-		client: goGerritClientMock{
+		Client: goGerritClientMock{
 			AbandonChangeFunc: func(ctx context.Context, changeID string, input *gogerrit.AbandonInput) (*gogerrit.ChangeInfo, *gogerrit.Response, error) {
 				// Ensure correct id is used when a change is abandoned
 				require.Equal(t, "repo-active~master~Icc717a31a47beb9b5d9aeb8a1d374883afe89030", changeID)
@@ -347,4 +352,52 @@ func TestClosePullRequest(t *testing.T) {
 	}
 	err := g.ClosePullRequest(context.Background(), pr)
 	require.NoError(t, err)
+}
+func TestGetRepositoriesWithSpecificList(t *testing.T) {
+	g := &Gerrit{
+		Client: goGerritClientMock{
+			ListProjectsFunc: func(_ context.Context, opt *gogerrit.ProjectOptions) (*map[string]gogerrit.ProjectInfo, *gogerrit.Response, error) {
+				// Verify we don't inject repoSearch when using specific repo list
+				require.Empty(t, opt.Regex)
+				return projects, nil, nil
+			},
+		},
+		BaseURL:  "https://gerrit.com",
+		Username: "admin",
+		Token:    "token123",
+		RepoListing: RepositoryListing{
+			Repositories: []string{"repo-active"},
+		},
+	}
+
+	repos, err := g.GetRepositories(context.Background())
+	require.NoError(t, err)
+	require.Len(t, repos, 1)
+
+	repo := repos[0]
+	assert.Equal(t, "repo-active", repo.FullName())
+	assert.Equal(t, "master", repo.DefaultBranch())
+	assert.Equal(t, "https://admin:token123@gerrit.com/a/repo-active", repo.CloneURL())
+
+	// Test with non-existent repository in the list
+	g.RepoListing.Repositories = []string{"repo-read-only"}
+	repos, err = g.GetRepositories(context.Background())
+	require.NoError(t, err)
+	require.Len(t, repos, 0)
+
+	// Test with empty repository list
+	g.RepoListing.Repositories = []string{}
+	repos, err = g.GetRepositories(context.Background())
+	require.NoError(t, err)
+	require.Len(t, repos, 2) // Should return all active repos
+
+	// Test with error from client
+	g.Client = goGerritClientMock{
+		ListProjectsFunc: func(_ context.Context, opt *gogerrit.ProjectOptions) (*map[string]gogerrit.ProjectInfo, *gogerrit.Response, error) {
+			return nil, nil, assert.AnError
+		},
+	}
+	repos, err = g.GetRepositories(context.Background())
+	require.Error(t, err)
+	require.Nil(t, repos)
 }

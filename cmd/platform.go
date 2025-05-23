@@ -406,14 +406,26 @@ func createGerritClient(flag *flag.FlagSet, verifyFlags bool) (multigitter.Versi
 		return nil, errors.New("no base-url set")
 	}
 
+	repoRefs, _ := flag.GetStringArray("repo")
 	repoSearch, _ := flag.GetString("repo-search")
+
+	if verifyFlags && len(repoRefs) == 0 && repoSearch != "" {
+		return nil, errors.New("repo and respoSearch can't be define both")
+	}
 
 	token, err := getToken(flag)
 	if err != nil {
 		return nil, err
 	}
 
-	vc, err := gerrit.New(username, token, gerritBaseURL, repoSearch)
+	vc, err := gerrit.New(gerrit.Config{
+		Username: username,
+		Token:    token,
+		BaseURL:  gerritBaseURL,
+		RepoListing: gerrit.RepositoryListing{
+			Repositories: repoRefs,
+			RepoSearch:   repoSearch,
+		}})
 	return vc, err
 }
 
