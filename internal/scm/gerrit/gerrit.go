@@ -22,43 +22,56 @@ const FooterBranch = "MultiGitter-Branch"
 const FooterChangeId = "Change-Id"
 
 type Gerrit struct {
-	client     GoGerritClient
-	baseUrl    string
-	username   string
-	token      string
-	repoSearch string
+	Client      GoGerritClient
+	BaseURL     string
+	Username    string
+	Token       string
+	RepoListing RepositoryListing
 }
 
-func New(username, token, baseURL, repoSearch string) (*Gerrit, error) {
+type Config struct {
+	Username    string
+	Token       string
+	BaseURL     string
+	RepoListing RepositoryListing
+}
+
+// RepositoryListing contains information about which repositories that should be fetched
+type RepositoryListing struct {
+	Repositories []string
+	RepoSearch   string
+}
+
+func New(config Config) (*Gerrit, error) {
 	ctx := context.Background()
-	client, err := gogerrit.NewClient(ctx, baseURL, nil)
+	client, err := gogerrit.NewClient(ctx, config.BaseURL, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create gerrit client")
 	}
 
-	client.Authentication.SetBasicAuth(username, token)
+	client.Authentication.SetBasicAuth(config.Username, config.Token)
 
 	return &Gerrit{
-		client: goGerritClient{
+		Client: goGerritClient{
 			client: client,
 		},
-		baseUrl:    baseURL,
-		username:   username,
-		token:      token,
-		repoSearch: repoSearch,
+		BaseURL:     config.BaseURL,
+		Username:    config.Username,
+		Token:       config.Token,
+		RepoListing: config.RepoListing,
 	}, nil
 }
 
 func (g Gerrit) GetRepositories(ctx context.Context) ([]scm.Repository, error) {
 	opt := &gogerrit.ProjectOptions{
 		Description: true,
-		Regex:       g.repoSearch,
+		Regex:       g.RepoListing.RepoSearch,
 		Type:        "CODE",
 		ProjectBaseOptions: gogerrit.ProjectBaseOptions{
 			Limit: 2500, // Maybe we should make this configurable
 		},
 	}
-	projects, _, err := g.client.ListProjects(ctx, opt)
+	projects, _, err := g.Client.ListProjects(ctx, opt)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list projects")
 	}
@@ -68,6 +81,10 @@ func (g Gerrit) GetRepositories(ctx context.Context) ([]scm.Repository, error) {
 		project := (*projects)[name]
 		if project.State != "ACTIVE" {
 			log.Debug("Skipping repository since state is not ACTIVE")
+			continue
+		}
+
+		if len(g.RepoListing.Repositories) != 0 && !slices.Contains(g.RepoListing.Repositories, name) {
 			continue
 		}
 
@@ -84,11 +101,11 @@ func (g Gerrit) GetRepositories(ctx context.Context) ([]scm.Repository, error) {
 
 func (g Gerrit) convertRepo(name string) (repository, error) {
 	// Note: maybe we should support cloning via ssh
-	u, err := url.Parse(g.baseUrl)
+	u, err := url.Parse(g.BaseURL)
 	if err != nil {
 		return repository{}, err
 	}
-	u.User = url.UserPassword(g.username, g.token)
+	u.User = url.UserPassword(g.Username, g.Token)
 	u.Path = "/a/" + name
 	repoUrl := u.String()
 
@@ -128,7 +145,7 @@ func (g Gerrit) GetPullRequests(ctx context.Context, branchName string) ([]scm.P
 			return nil, err
 		}
 		for _, change := range *changes {
-			prs = append(prs, convertChange(change, g.baseUrl))
+			prs = append(prs, convertChange(change, g.BaseURL))
 		}
 	}
 
@@ -149,13 +166,13 @@ func (g Gerrit) GetOpenPullRequest(ctx context.Context, repo scm.Repository, bra
 		return nil, errors.New("More than one open change for branch " + branchName + " in project " + repo.FullName())
 	}
 
-	return convertChange((*changes)[0], g.baseUrl), nil
+	return convertChange((*changes)[0], g.BaseURL), nil
 }
 
 func (g Gerrit) MergePullRequest(ctx context.Context, pr scm.PullRequest) error {
 	change := pr.(change)
 
-	_, _, err := g.client.SubmitChange(ctx, change.id, &gogerrit.SubmitInput{})
+	_, _, err := g.Client.SubmitChange(ctx, change.id, &gogerrit.SubmitInput{})
 
 	return err
 }
@@ -163,7 +180,7 @@ func (g Gerrit) MergePullRequest(ctx context.Context, pr scm.PullRequest) error 
 func (g Gerrit) ClosePullRequest(ctx context.Context, pr scm.PullRequest) error {
 	change := pr.(change)
 
-	_, _, err := g.client.AbandonChange(ctx, change.id, &gogerrit.AbandonInput{})
+	_, _, err := g.Client.AbandonChange(ctx, change.id, &gogerrit.AbandonInput{})
 	if err != nil {
 		return err
 	}
@@ -201,7 +218,7 @@ func (g Gerrit) queryChanges(ctx context.Context, repo scm.Repository, branchNam
 			},
 		},
 	}
-	changes, _, err := g.client.QueryChanges(ctx, opt)
+	changes, _, err := g.Client.QueryChanges(ctx, opt)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to query changes: '%s'", filters)
 	}
